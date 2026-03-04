@@ -17,7 +17,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 // ── Config ────────────────────────────────────────────────────────
-const HASHTAG           = 'firstpost';
+const HASHTAG           = 'standaretopost';
 const MAX_FOLLOWERS     = 1000;
 const LOOKBACK_HOURS    = 24;
 // Apify free tier: keep resultsLimit low (50–100) to stay within $5/mo credits.

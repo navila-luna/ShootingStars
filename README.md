@@ -9,7 +9,7 @@ An internet art project — animated shooting stars, each one a real person who 
 ## How it works
 
 1. **GitHub Actions** runs a cron job every day at 00:05 UTC
-2. It calls the **Apify Instagram Hashtag Scraper** for `#firstpost`
+2. It calls the **Apify Instagram Hashtag Scraper** for `#standaretopost`
 3. Posts are filtered: posted within 24 hours, account has ≤ 1,000 followers
 4. Results are saved as `posts.json` and committed to this repo
 5. **GitHub Pages** serves the static site — the frontend fetches `posts.json` on load
