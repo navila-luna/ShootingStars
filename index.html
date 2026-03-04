@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>First Light</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300;1,400&family=Raleway:wght@200;300&display=swap');
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#020408; overflow:hidden; width:100vw; height:100vh; font-family:'Raleway',sans-serif; cursor:none; }
+  #canvas-container { position:fixed; inset:0; }
+  canvas { display:block; }
+
+  #cursor {
+    position:fixed; width:8px; height:8px; border-radius:50%;
+    background:rgba(200,220,255,.9); box-shadow:0 0 12px 3px rgba(140,180,255,.5);
+    pointer-events:none; z-index:9999; transform:translate(-50%,-50%);
+    transition:width .25s,height .25s,background .25s,box-shadow .25s;
+  }
+  #cursor.near-star {
+    width:28px; height:28px; background:transparent;
+    border:1.5px solid rgba(180,210,255,.6);
+    box-shadow:0 0 20px 4px rgba(140,180,255,.3),inset 0 0 10px rgba(140,180,255,.1);
+  }
+
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:200; }
+  #title { position:absolute; top:2.2rem; left:2.5rem; }
+  #title h1 { font-family:'Cormorant Garamond',serif; font-weight:300; font-size:clamp(1.6rem,2.2vw,2.2rem); color:rgba(210,225,255,.88); letter-spacing:.06em; line-height:1; }
+  #title p  { margin-top:.35rem; font-weight:200; font-size:.62rem; letter-spacing:.3em; text-transform:uppercase; color:rgba(150,175,220,.45); }
+  #counter  { position:absolute; top:2.2rem; right:2.5rem; text-align:right; }
+  #counter .num { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:1.8rem; font-weight:300; color:rgba(200,215,255,.6); line-height:1; }
+  #counter .label { font-weight:200; font-size:.6rem; letter-spacing:.25em; text-transform:uppercase; color:rgba(140,165,210,.35); margin-top:.2rem; }
+  #hint { position:absolute; bottom:2rem; left:50%; transform:translateX(-50%); font-weight:200; font-size:.6rem; letter-spacing:.3em; text-transform:uppercase; color:rgba(150,175,220,.35); white-space:nowrap; transition:opacity 1.5s; }
+  #hint.fade { opacity:0; }
+
+  #star-tooltip { position:fixed; pointer-events:none; z-index:300; opacity:0; transition:opacity .3s; transform:translate(18px,-50%); }
+  #star-tooltip.visible { opacity:1; }
+  #star-tooltip .tt-name { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:.95rem; color:rgba(210,225,255,.85); letter-spacing:.04em; }
+  #star-tooltip .tt-sub  { font-weight:200; font-size:.58rem; letter-spacing:.22em; text-transform:uppercase; color:rgba(150,175,220,.45); margin-top:.15rem; }
+
+  /* ═══════════════════════════════════════════════════════════
+     LETTERBOX — adapts to landscape (laptop) and portrait (mobile)
+     ═══════════════════════════════════════════════════════════ */
+  #letterbox {
+    position:fixed; inset:0; z-index:500;
+    display:none; flex-direction:column; pointer-events:all;
+  }
+  #letterbox.open { display:flex; }
+
+  /* Slim bars on landscape so the tall frame isn't clipped */
+  .lb-bar { background:#000; height:0; flex-shrink:0; transition:height .75s cubic-bezier(.77,0,.175,1); }
+  #letterbox.open .lb-bar { height:5vh; }
+  @media (orientation:portrait) { #letterbox.open .lb-bar { height:14vh; } }
+
+  /* Stage: row on landscape (frame beside meta), column on portrait */
+  #lb-stage {
+    flex:1; background:#000; position:relative;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:row;
+    gap:clamp(1.5rem,3vw,5rem);
+    padding:1vh 4vw;
+    opacity:0; transition:opacity .6s ease .55s;
+  }
+  @media (orientation:portrait),(max-aspect-ratio:3/4) {
+    #lb-stage { flex-direction:column; gap:1rem; padding:1rem 1.5rem; }
+  }
+  #letterbox.open #lb-stage { opacity:1; }
+
+  /* Frame: height-constrained on landscape so it never overflows */
+  #lb-frame {
+    flex-shrink:0;
+    height:min(86vh, calc(100vh - 10vh - 2rem));
+    width:auto;
+    aspect-ratio:9/16;
+    background:#05050f;
+    border:1px solid rgba(150,180,255,.12);
+    box-shadow:0 0 0 1px rgba(100,140,255,.05),0 0 80px rgba(80,120,255,.1),0 0 200px rgba(60,100,255,.05);
+    position:relative; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:1.2rem;
+  }
+  /* Portrait: width-constrained instead */
+  @media (orientation:portrait),(max-aspect-ratio:3/4) {
+    #lb-frame { height:auto; width:min(65vw,280px); }
+  }
+  #lb-frame::after {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,20,.05) 2px,rgba(0,0,20,.05) 4px);
+  }
+
+  /* Meta panel — shown beside frame on landscape */
+  #lb-meta-panel {
+    display:flex; flex-direction:column; justify-content:center;
+    align-items:flex-start; gap:.9rem; max-width:280px;
+  }
+  @media (orientation:portrait),(max-aspect-ratio:3/4) {
+    #lb-meta-panel { align-items:center; max-width:100%; }
+  }
+
+  .lb-avatar {
+    width:56px; height:56px; border-radius:50%;
+    border:1px solid rgba(160,190,255,.3);
+    background:radial-gradient(circle at 38% 32%,rgba(80,100,220,.4),rgba(10,8,40,.95));
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 30px rgba(100,140,255,.25),0 0 60px rgba(100,140,255,.1);
+    font-size:1.3rem; color:rgba(180,200,255,.6);
+    animation:avatarFloat 4s ease-in-out infinite;
+  }
+  @keyframes avatarFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+
+  /* Text inside frame (placeholder) */
+  .lb-frame-uname { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:1rem; color:rgba(210,225,255,.8); letter-spacing:.05em; }
+  .lb-frame-tag   { font-weight:200; font-size:.55rem; letter-spacing:.28em; text-transform:uppercase; color:rgba(140,165,220,.4); }
+  .lb-frame-line  { width:28px; height:1px; background:rgba(150,180,255,.2); }
+
+  /* Text in meta panel */
+  .lb-panel-uname { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:clamp(1.2rem,2vw,1.7rem); color:rgba(210,225,255,.85); letter-spacing:.04em; line-height:1.1; }
+  .lb-panel-tag   { font-weight:200; font-size:.58rem; letter-spacing:.28em; text-transform:uppercase; color:rgba(140,165,220,.35); }
+  .lb-panel-dream { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:clamp(.85rem,1.1vw,1rem); color:rgba(180,200,255,.5); line-height:1.7; }
+  .lb-panel-followers { font-weight:200; font-size:.58rem; letter-spacing:.2em; text-transform:uppercase; color:rgba(130,155,210,.3); }
+  .lb-panel-line  { width:28px; height:1px; background:rgba(150,180,255,.15); }
+
+  #lb-close {
+    position:absolute; top:1rem; right:1.2rem; background:none;
+    border:1px solid rgba(160,185,255,.18); color:rgba(160,185,255,.45);
+    font-family:'Raleway',sans-serif; font-weight:200; font-size:.58rem;
+    letter-spacing:.3em; text-transform:uppercase; padding:.4rem .85rem;
+    cursor:none; transition:border-color .2s,color .2s;
+  }
+  #lb-close:hover { border-color:rgba(180,205,255,.5); color:rgba(200,220,255,.85); }
+
+  #veil { position:fixed; inset:0; background:#020408; z-index:1000; transition:opacity 2.5s; pointer-events:none; }
+  #veil.gone { opacity:0; }
+</style>
+</head>
+<body>
+<div id="veil"></div>
+<div id="cursor"></div>
+<div id="canvas-container"></div>
+
+<div id="hud">
+  <div id="title"><h1>First Light</h1><p>#firstpost &nbsp;·&nbsp; today's dreamers</p></div>
+  <div id="counter">
+    <div class="num"><span id="found">0</span></div>
+    <div class="label">of <span id="total">0</span> discovered</div>
+  </div>
+  <div id="hint">scroll to fly deeper &nbsp;·&nbsp; drag or arrow keys to explore &nbsp;·&nbsp; click a star</div>
+</div>
+
+<div id="star-tooltip">
+  <div class="tt-name" id="tt-name">@username</div>
+  <div class="tt-sub">click to reveal</div>
+</div>
+
+<!-- Letterbox:
+     Landscape → [slim bar] [ 9:16 frame  |  metadata panel ] [slim bar]
+     Portrait  → [bar] [ frame ] [ metadata ] [bar]                      -->
+<div id="letterbox">
+  <div class="lb-bar"></div>
+  <div id="lb-stage">
+    <div id="lb-frame">
+      <div class="lb-avatar">✦</div>
+      <div class="lb-frame-uname" id="lb-frame-uname">@username</div>
+      <div class="lb-frame-tag">#firstpost</div>
+      <div class="lb-frame-line"></div>
+      <!--
+        BACKEND: swap inner content for:
+        <video id="lb-video" src="" autoplay loop playsinline
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>
+      -->
+    </div>
+    <div id="lb-meta-panel">
+      <div class="lb-panel-uname"       id="lb-panel-uname">@username</div>
+      <div class="lb-panel-tag">#firstpost &nbsp;·&nbsp; first post</div>
+      <div class="lb-panel-line"></div>
+      <div class="lb-panel-dream"       id="lb-panel-dream">their first step into the light</div>
+      <div class="lb-panel-followers"   id="lb-panel-followers"></div>
+    </div>
+  </div>
+  <div class="lb-bar"></div>
+  <button id="lb-close" onclick="closeLetterbox()">close &nbsp; ✕</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ── Mock data (replace with API) ──────────────────────────────────
+const STARS_DATA = [
+  { id:0,  username:'aurora.vidal',   followers:312, dream:'fashion & self-love' },
+  { id:1,  username:'sol.beginnings', followers:88,  dream:'travel photography' },
+  { id:2,  username:'lena.tries',     followers:547, dream:'cooking for everyone' },
+  { id:3,  username:'marco.light',    followers:203, dream:'street art & murals' },
+  { id:4,  username:'yuki.first',     followers:71,  dream:'sustainable fashion' },
+  { id:5,  username:'priya.dawn',     followers:418, dream:'mental health advocate' },
+  { id:6,  username:'theo.steps',     followers:156, dream:'urban exploration' },
+  { id:7,  username:'mia.starts',     followers:634, dream:'film photography' },
+  { id:8,  username:'kai.opens',      followers:29,  dream:'poetry & spoken word' },
+  { id:9,  username:'ella.debut',     followers:782, dream:'plant-based chef' },
+  { id:10, username:'omar.hello',     followers:115, dream:'dance & movement' },
+  { id:11, username:'ines.wave',      followers:463, dream:'ocean conservation' },
+  { id:12, username:'finn.spark',     followers:38,  dream:'indie music producer' },
+  { id:13, username:'ada.rise',       followers:291, dream:'digital illustration' },
+  { id:14, username:'leo.blinks',     followers:507, dream:'skateboarding & culture' },
+  { id:15, username:'nova.one',       followers:144, dream:'astronomy & wonder' },
+  { id:16, username:'jess.launch',    followers:872, dream:'tech for good' },
+  { id:17, username:'rue.begins',     followers:66,  dream:'vintage thrifting' },
+];
+
+// ── Renderer ──────────────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const renderer  = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x020408, 1);
+container.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.fog    = new THREE.FogExp2(0x020408, 0.0015);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 3000);
+camera.position.set(0, 0, 130);
+
+// ── Ambient star field ────────────────────────────────────────────
+(function(){
+  const N=5000, pos=new Float32Array(N*3), sz=new Float32Array(N), al=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=180+Math.random()*1400;
+    pos[i*3]=r*Math.sin(ph)*Math.cos(th); pos[i*3+1]=r*Math.sin(ph)*Math.sin(th); pos[i*3+2]=r*Math.cos(ph);
+    sz[i]=1.2+Math.random()*3.2; al[i]=0.2+Math.random()*0.7;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('aSize',   new THREE.BufferAttribute(sz,1));
+  geo.setAttribute('aAlpha',  new THREE.BufferAttribute(al,1));
+  const mat=new THREE.ShaderMaterial({
+    uniforms:{uTime:{value:0}},
+    vertexShader:`
+      attribute float aSize; attribute float aAlpha; varying float vAlpha; uniform float uTime;
+      void main(){
+        vAlpha=aAlpha; vec4 mv=modelViewMatrix*vec4(position,1.0);
+        float tw=0.82+0.18*sin(uTime*1.6+position.x*0.4+position.z*0.3);
+        gl_PointSize=aSize*tw*(280.0/-mv.z); gl_Position=projectionMatrix*mv;
+      }`,
+    fragmentShader:`
+      varying float vAlpha;
+      void main(){
+        vec2 uv=gl_PointCoord-0.5; float d=length(uv); if(d>0.5)discard;
+        float a=smoothstep(0.5,0.0,d)*vAlpha;
+        vec3 col=mix(vec3(0.78,0.88,1.0),vec3(1.0,0.94,0.85),fract(vAlpha*7.3));
+        gl_FragColor=vec4(col,a);
+      }`,
+    transparent:true, depthWrite:false,
+  });
+  scene.add(new THREE.Points(geo,mat));
+  scene.userData.ambientMat=mat;
+})();
+
+// Nebula
+[{col:0x110840,x:-90,y:40,z:-280,s:300,r:.4},{col:0x081530,x:110,y:-60,z:-480,s:380,r:1.1},{col:0x180530,x:0,y:90,z:-680,s:450,r:2.0}]
+.forEach(d=>{
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(d.s,d.s),new THREE.MeshBasicMaterial({color:d.col,transparent:true,opacity:.14,depthWrite:false,blending:THREE.AdditiveBlending}));
+  m.position.set(d.x,d.y,d.z); m.rotation.z=d.r; scene.add(m);
+});
+
+// ── Shooting star shaders ─────────────────────────────────────────
+const HEAD_VERT=`
+  uniform float uSize; uniform float uViewed;
+  void main(){
+    vec4 mv=modelViewMatrix*vec4(position,1.0);
+    float s=uViewed>0.5?uSize*1.6:uSize;
+    gl_PointSize=s*(300.0/-mv.z); gl_Position=projectionMatrix*mv;
+  }`;
+
+const HEAD_FRAG=`
+  uniform float uTime,uPulse,uViewed;
+  void main(){
+    vec2 uv=gl_PointCoord-0.5; float d=length(uv); if(d>0.5)discard;
+    if(uViewed>0.5){
+      float core=exp(-d*16.0)*2.5, glow=exp(-d*4.5)*(0.6+0.3*sin(uTime*1.6)), halo=exp(-abs(d-0.28)*22.0)*0.5;
+      vec3 col=core*vec3(1.0,.6,.22)+glow*vec3(.85,.32,.08)+halo*vec3(.7,.25,.05);
+      gl_FragColor=vec4(col,clamp(core+glow+halo,0.,1.)); return;
+    }
+    float nuc=exp(-d*40.)*3.5, core=exp(-d*18.)*2.0;
+    float h1=exp(-abs(d-(.16+uPulse*.07))*45.)*(.8+uPulse*.5);
+    float h2=exp(-abs(d-(.30+uPulse*.04))*30.)*(.35+uPulse*.25);
+    float cor=exp(-d*5.5)*.5;
+    float alpha=clamp(nuc+core+h1+h2+cor,0.,1.);
+    vec3 col=nuc*vec3(1,1,1)+core*vec3(.9,.96,1)+h1*vec3(.6,.78,1)+h2*vec3(.4,.55,.95)+cor*vec3(.3,.45,.85);
+    gl_FragColor=vec4(col,alpha);
+  }`;
+
+const STREAK_VERT=`
+  attribute float aTaper,aOffset; varying float vTaper,vOffset;
+  void main(){ vTaper=aTaper; vOffset=aOffset; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+
+const STREAK_FRAG=`
+  uniform float uTime,uViewed; varying float vTaper,vOffset;
+  void main(){
+    if(uViewed>0.5){discard;return;}
+    float b=vOffset*vOffset, sh=.75+.25*sin(uTime*6.-vOffset*14.);
+    float edge=smoothstep(0.,.35,vTaper)*smoothstep(1.,.65,vTaper);
+    float alpha=b*sh*edge*.92;
+    vec3 col=mix(vec3(.25,.35,.8),vec3(.75,.88,1.),vOffset);
+    gl_FragColor=vec4(col,clamp(alpha,0.,1.));
+  }`;
+
+// ── Streak geometry ───────────────────────────────────────────────
+function buildStreak(len,hw){
+  const SEG=40, verts=[],tapers=[],offsets=[],idx=[];
+  for(let s=0;s<=SEG;s++){
+    const t=s/SEG, x=-t*len, w=hw*(1-t)*(1-t), off=1-t;
+    verts.push(x,w,0);  tapers.push(0); offsets.push(off);
+    verts.push(x,0,0);  tapers.push(1); offsets.push(off);
+    verts.push(x,-w,0); tapers.push(0); offsets.push(off);
+  }
+  for(let s=0;s<SEG;s++){
+    const b=s*3;
+    idx.push(b,b+3,b+1, b+3,b+4,b+1, b+1,b+4,b+2, b+4,b+5,b+2);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(verts),3));
+  g.setAttribute('aTaper',  new THREE.BufferAttribute(new Float32Array(tapers),1));
+  g.setAttribute('aOffset', new THREE.BufferAttribute(new Float32Array(offsets),1));
+  g.setIndex(idx); return g;
+}
+
+// ── Place stars ───────────────────────────────────────────────────
+function gridPos(n){
+  const SP=350, cols=Math.ceil(Math.sqrt(n*1.5)), rows=Math.ceil(n/cols);
+  const cw=SP*2/cols, ch=SP*2/rows;
+  return shuffle([...Array(cols*rows).keys()]).slice(0,n).map(idx=>{
+    const col=idx%cols, row=Math.floor(idx/cols), m=.18;
+    return { x:-SP+(col+m+Math.random()*(1-m*2))*cw, y:-SP+(row+m+Math.random()*(1-m*2))*ch, z:-50+Math.random()*160 };
+  });
+}
+
+const starPositions=gridPos(STARS_DATA.length), starObjects=[];
+STARS_DATA.forEach((data,i)=>{
+  const p=starPositions[i], angle=(-28+(Math.random()*24-12))*Math.PI/180;
+  const phase=Math.random()*Math.PI*2, driftR=3.5+Math.random()*4, driftSpd=.012+Math.random()*.010;
+
+  const group=new THREE.Group();
+  group.position.set(p.x,p.y,p.z); group.rotation.z=angle;
+
+  const headMat=new THREE.ShaderMaterial({
+    uniforms:{uTime:{value:0},uPulse:{value:0},uViewed:{value:0},uSize:{value:48}},
+    vertexShader:HEAD_VERT, fragmentShader:HEAD_FRAG,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
+  });
+  const hg=new THREE.BufferGeometry();
+  hg.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,0,0]),3));
+  group.add(new THREE.Points(hg,headMat));
+
+  const streakMat=new THREE.ShaderMaterial({
+    uniforms:{uTime:{value:0},uViewed:{value:0}},
+    vertexShader:STREAK_VERT, fragmentShader:STREAK_FRAG,
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
+  });
+  group.add(new THREE.Mesh(buildStreak(22+Math.random()*16,.55),streakMat));
+  scene.add(group);
+
+  const hitSphere=new THREE.Mesh(new THREE.SphereGeometry(3.5,6,6),new THREE.MeshBasicMaterial({visible:false}));
+  hitSphere.position.set(p.x,p.y,p.z); scene.add(hitSphere);
+
+  starObjects.push({ group,headMat,streakMat,hitSphere,data,
+    ox:p.x,oy:p.y,phase,driftR,driftSpd,viewed:false,
+    blastDir:new THREE.Vector2(Math.random()-.5,Math.random()-.5).normalize(),
+  });
+});
+document.getElementById('total').textContent=STARS_DATA.length;
+
+// ── Raycasting ────────────────────────────────────────────────────
+const raycaster=new THREE.Raycaster(), mouseNDC=new THREE.Vector2(-9,-9);
+let hoveredStar=null, foundCount=0;
+const cursorEl=document.getElementById('cursor'), tooltip=document.getElementById('star-tooltip'), ttName=document.getElementById('tt-name');
+
+function castRay(){
+  raycaster.setFromCamera(mouseNDC,camera);
+  const hits=raycaster.intersectObjects(starObjects.filter(s=>!s.viewed).map(s=>s.hitSphere));
+  if(hits.length){
+    const obj=starObjects.find(s=>s.hitSphere===hits[0].object);
+    if(obj&&obj!==hoveredStar){ hoveredStar=obj; ttName.textContent='@'+obj.data.username; cursorEl.classList.add('near-star'); tooltip.classList.add('visible'); }
+  } else if(hoveredStar){ hoveredStar=null; cursorEl.classList.remove('near-star'); tooltip.classList.remove('visible'); }
+}
+
+// ── Camera ────────────────────────────────────────────────────────
+const camT={x:0,y:0,z:130}, PAN=340, ZMN=18, ZMX=220, keys={};
+window.addEventListener('keydown',e=>{ keys[e.key]=true; if(e.key==='Escape')closeLetterbox(); });
+window.addEventListener('keyup',  e=>{ keys[e.key]=false; });
+window.addEventListener('wheel',e=>{
+  e.preventDefault();
+  camT.z=Math.max(ZMN,Math.min(ZMX,camT.z+e.deltaY*.13));
+  camT.x=Math.max(-PAN,Math.min(PAN,camT.x+e.deltaX*.06));
+},{passive:false});
+
+let drag=null;
+window.addEventListener('mousedown',e=>{ if(e.target.closest('#letterbox'))return; drag={sx:e.clientX,sy:e.clientY,cx:camT.x,cy:camT.y}; });
+window.addEventListener('mouseup',  ()=>{ drag=null; });
+window.addEventListener('mousemove',e=>{
+  cursorEl.style.left=e.clientX+'px'; cursorEl.style.top=e.clientY+'px';
+  tooltip.style.left =e.clientX+'px'; tooltip.style.top =e.clientY+'px';
+  mouseNDC.x=(e.clientX/window.innerWidth)*2-1; mouseNDC.y=-(e.clientY/window.innerHeight)*2+1;
+  if(!drag)return;
+  camT.x=Math.max(-PAN,Math.min(PAN,drag.cx-(e.clientX-drag.sx)*.14));
+  camT.y=Math.max(-PAN,Math.min(PAN,drag.cy+(e.clientY-drag.sy)*.14));
+});
+window.addEventListener('click',()=>{ if(hoveredStar&&!hoveredStar.viewed)openLetterbox(hoveredStar); });
+
+let t0=null;
+window.addEventListener('touchstart',e=>{ t0={x:e.touches[0].clientX,y:e.touches[0].clientY,cx:camT.x,cy:camT.y}; },{passive:true});
+window.addEventListener('touchmove', e=>{
+  if(!t0)return;
+  camT.x=Math.max(-PAN,Math.min(PAN,t0.cx-(e.touches[0].clientX-t0.x)*.14));
+  camT.y=Math.max(-PAN,Math.min(PAN,t0.cy+(e.touches[0].clientY-t0.y)*.14));
+  e.preventDefault();
+},{passive:false});
+
+function processKeys(){
+  const sp=keys['Shift']?2.2:.9;
+  if(keys['ArrowLeft'] ||keys['a'])camT.x=Math.max(-PAN,camT.x-sp);
+  if(keys['ArrowRight']||keys['d'])camT.x=Math.min(PAN,camT.x+sp);
+  if(keys['ArrowUp']   ||keys['w'])camT.y=Math.min(PAN,camT.y+sp);
+  if(keys['ArrowDown'] ||keys['s'])camT.y=Math.max(-PAN,camT.y-sp);
+}
+
+// ── Letterbox ─────────────────────────────────────────────────────
+function openLetterbox(s){
+  s.viewed=true;
+  s.headMat.uniforms.uViewed.value=s.streakMat.uniforms.uViewed.value=1.0;
+  s.hitSphere.visible=false; foundCount++;
+  document.getElementById('found').textContent=foundCount;
+  document.getElementById('lb-frame-uname').textContent=document.getElementById('lb-panel-uname').textContent='@'+s.data.username;
+  document.getElementById('lb-panel-dream').textContent=s.data.dream;
+  document.getElementById('lb-panel-followers').textContent=s.data.followers+' followers';
+  document.getElementById('letterbox').classList.add('open');
+  // BACKEND: document.getElementById('lb-video').src=s.data.videoUrl;
+}
+function closeLetterbox(){
+  document.getElementById('letterbox').classList.remove('open');
+  hoveredStar=null; cursorEl.classList.remove('near-star'); tooltip.classList.remove('visible');
+}
+
+// ── Main loop ─────────────────────────────────────────────────────
+const clock=new THREE.Clock(); let e0=null;
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime(); if(e0===null)e0=t;
+  const calm=easeOutExpo(Math.min((t-e0)/5.5,1)), blast=1-calm;
+  if(scene.userData.ambientMat)scene.userData.ambientMat.uniforms.uTime.value=t;
+  starObjects.forEach(s=>{
+    s.headMat.uniforms.uTime.value=s.streakMat.uniforms.uTime.value=t;
+    if(s.viewed)return;
+    s.headMat.uniforms.uPulse.value=.5+.5*Math.sin(t*2.4+s.phase);
+    const nx=s.ox+Math.sin(t*s.driftSpd+s.phase)*s.driftR*calm+s.blastDir.x*blast*40;
+    const ny=s.oy+Math.cos(t*s.driftSpd*.65+s.phase*1.4)*s.driftR*.45*calm+s.blastDir.y*blast*25;
+    s.group.position.x=s.hitSphere.position.x=nx;
+    s.group.position.y=s.hitSphere.position.y=ny;
+  });
+  processKeys();
+  camera.position.x+=(camT.x-camera.position.x)*.07;
+  camera.position.y+=(camT.y-camera.position.y)*.07;
+  camera.position.z+=(camT.z-camera.position.z)*.07;
+  camera.lookAt(camT.x*.1,camT.y*.1,0);
+  castRay(); renderer.render(scene,camera);
+}
+
+function easeOutExpo(x){return x>=1?1:1-Math.pow(2,-10*x);}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+setTimeout(()=>document.getElementById('veil').classList.add('gone'),200);
+setTimeout(()=>document.getElementById('veil').remove(),3000);
+setTimeout(()=>{ const h=document.getElementById('hint'); h.classList.add('fade'); setTimeout(()=>h.remove(),1600); },9000);
+animate();
+</script>
+</body>
+</html>

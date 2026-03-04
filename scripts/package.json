@@ -1,0 +1,12 @@
+{
+  "name": "firstlight-scripts",
+  "version": "1.0.0",
+  "description": "Daily Instagram post fetcher for First Light",
+  "type": "module",
+  "scripts": {
+    "fetch": "node fetch-posts.js"
+  },
+  "dependencies": {
+    "apify-client": "^2.9.3"
+  }
+}

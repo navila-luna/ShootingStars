@@ -1,0 +1,39 @@
+name: Fetch Daily Instagram Posts
+
+on:
+  # Runs every day at 00:05 UTC — adjust timezone offset to your preference
+  schedule:
+    - cron: '0 12 * * *'
+  # Lets you trigger it manually from GitHub Actions tab (useful for testing)
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: scripts
+
+      - name: Run Apify scraper & filter posts
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: node scripts/fetch-posts.js
+
+      - name: Commit updated posts.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add posts.json
+          # Only commit if posts.json actually changed
+          git diff --staged --quiet || git commit -m "chore: daily posts refresh $(date -u '+%Y-%m-%d')"
+          git push
