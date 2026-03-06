@@ -3,7 +3,7 @@ name: Fetch Daily Instagram Posts
 on:
   # Runs every day at 00:05 UTC — adjust timezone offset to your preference
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 17 * * *'
   # Lets you trigger it manually from GitHub Actions tab (useful for testing)
   workflow_dispatch:
 
