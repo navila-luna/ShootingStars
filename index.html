@@ -1,750 +1,99 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Shooting Stars</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300;1,400&family=Raleway:wght@200;300&display=swap');
-  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#020408; overflow:hidden; width:100vw; height:100vh; font-family:'Raleway',sans-serif; cursor:none; }
-  #canvas-container { position:fixed; inset:0; }
-  canvas { display:block; }
-
-  #cursor {
-    position:fixed; width:8px; height:8px; border-radius:50%;
-    background:rgba(200,220,255,.9); box-shadow:0 0 12px 3px rgba(140,180,255,.5);
-    pointer-events:none; z-index:9999; transform:translate(-50%,-50%);
-    transition:width .25s,height .25s,background .25s,box-shadow .25s;
-  }
-  #cursor.near-star {
-    width:28px; height:28px; background:transparent;
-    border:1.5px solid rgba(180,210,255,.6);
-    box-shadow:0 0 20px 4px rgba(140,180,255,.3),inset 0 0 10px rgba(140,180,255,.1);
-  }
-
-  #hud { position:fixed; inset:0; pointer-events:none; z-index:200; }
-  #title { position:absolute; top:2.2rem; left:2.5rem; }
-  #title h1 {
-    font-family:'Cormorant Garamond',serif; font-weight:300;
-    font-size:clamp(2.2rem,3.2vw,3.4rem);
-    color:rgba(230,238,255,1);
-    letter-spacing:.08em; line-height:1;
-    text-shadow:
-      0 0 18px rgba(160,190,255,.7),
-      0 0 45px rgba(120,160,255,.35),
-      0 0 90px rgba(100,140,255,.15);
-  }
-  #title p  { margin-top:.5rem; font-weight:200; font-size:.78rem; letter-spacing:.3em; text-transform:uppercase; color:rgba(180,205,255,.75); }
-  #counter  { position:absolute; top:2.2rem; right:2.5rem; text-align:right; }
-  #counter .num {
-    font-family:'Cormorant Garamond',serif; font-style:italic;
-    font-size:clamp(2.2rem,3.2vw,3.4rem); font-weight:300;
-    color:rgba(230,238,255,1); line-height:1;
-    text-shadow:
-      0 0 14px rgba(160,190,255,.6),
-      0 0 35px rgba(120,160,255,.3);
-  }
-  #counter .label { font-weight:200; font-size:.75rem; letter-spacing:.25em; text-transform:uppercase; color:rgba(180,205,255,.7); margin-top:.3rem; }
-  #hint { position:absolute; bottom:2rem; left:50%; transform:translateX(-50%); font-weight:200; font-size:.72rem; letter-spacing:.28em; text-transform:uppercase; color:rgba(180,205,255,.65); white-space:nowrap; transition:opacity 1.5s; }
-  #hint.fade { opacity:0; }
-
-  #star-tooltip { position:fixed; pointer-events:none; z-index:300; opacity:0; transition:opacity .3s; transform:translate(18px,-50%); }
-  #star-tooltip.visible { opacity:1; }
-  #star-tooltip .tt-name { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:.95rem; color:rgba(210,225,255,.85); letter-spacing:.04em; }
-  #star-tooltip .tt-sub  { font-weight:200; font-size:.58rem; letter-spacing:.22em; text-transform:uppercase; color:rgba(150,175,220,.45); margin-top:.15rem; }
-
-  /* ═══════════════════════════════════════════════════════════
-     LETTERBOX — adapts to landscape (laptop) and portrait (mobile)
-     ═══════════════════════════════════════════════════════════ */
-  #letterbox {
-    position:fixed; inset:0; z-index:500;
-    display:none; flex-direction:column; pointer-events:all;
-  }
-  #letterbox.open { display:flex; }
-
-  /* Slim bars */
-  .lb-bar { background:#000; height:0; flex-shrink:0; transition:height .75s cubic-bezier(.77,0,.175,1); }
-  #letterbox.open .lb-bar { height:3vh; }
-  @media (orientation:portrait) { #letterbox.open .lb-bar { height:8vh; } }
-
-  /* Stage: row on landscape, column on portrait */
-  #lb-stage {
-    flex:1; background:#000; position:relative;
-    display:flex; align-items:center; justify-content:center;
-    flex-direction:row;
-    gap:clamp(1.5rem,3vw,4rem);
-    padding:1.5vh 4vw;
-    opacity:0; transition:opacity .6s ease .55s;
-  }
-  @media (orientation:portrait),(max-aspect-ratio:3/4) {
-    #lb-stage { flex-direction:column; gap:1rem; padding:1rem 1.5rem; }
-  }
-  #letterbox.open #lb-stage { opacity:1; }
-
-  /* ── FRAME: "door" outer shell + inner media ── */
-  /* Outer wrapper — the thick rounded door frame */
-  /* lb-frame-outer: the "door" border shell.
-     Strategy: height-driven on landscape, width-driven on portrait.
-     We use position:relative so #lb-close can anchor to its corner. */
-  #lb-frame-outer {
-    flex-shrink:0;
-    /* Height: fill viewport minus bars and breathing room */
-    height:min(90vh, calc(100vh - 6vh - 1rem));
-    width:auto;
-    aspect-ratio:9/16;
-    border-radius:20px;
-    border:3px solid rgba(180,200,255,.55);
-    outline:6px solid rgba(100,130,255,.12);
-    box-shadow:
-      0 0 0 9px rgba(80,110,255,.07),
-      0 0 40px rgba(100,150,255,.18),
-      0 0 100px rgba(80,120,255,.10),
-      inset 0 0 30px rgba(80,110,255,.06);
-    padding:5px;
-    background:rgba(8,8,24,.85);
-    position:relative;          /* anchor point for the close button */
-    animation:none;
-  }
-  #letterbox.open #lb-frame-outer {
-    animation:doorOpen .65s cubic-bezier(.22,1,.36,1) both;
-  }
-  @keyframes doorOpen {
-    from { transform:perspective(900px) rotateY(-18deg) scale(.94); opacity:0; }
-    to   { transform:perspective(900px) rotateY(0deg)  scale(1);   opacity:1; }
-  }
-  @media (orientation:portrait),(max-aspect-ratio:3/4) {
-    #lb-frame-outer { height:auto; width:min(72vw,300px); }
-  }
-
-  /* Inner frame — clips media to rounded rect */
-  #lb-frame {
-    width:100%; height:100%;
-    border-radius:15px;
-    background:#05050f;
-    position:relative; overflow:hidden;
-    display:flex; align-items:center; justify-content:center;
-    flex-direction:column; gap:1.2rem;
-  }
-  /* Scanline shimmer */
-  #lb-frame::after {
-    content:''; position:absolute; inset:0; pointer-events:none; border-radius:15px;
-    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,20,.04) 2px,rgba(0,0,20,.04) 4px);
-  }
-  /* Clickable overlay for image — covers the whole frame */
-  #lb-frame-link {
-    position:absolute; inset:0; z-index:2; display:block;
-    border-radius:15px; cursor:none;
-    /* subtle hover tint */
-    transition: background .2s;
-  }
-  #lb-frame-link:hover { background: rgba(150,180,255,.06); }
-
-  /* ── META PANEL ── */
-  /* Full-height column matching the frame — close pins top, content centers */
-  #lb-meta-panel {
-    display:flex;
-    flex-direction:column;
-    align-items:stretch;
-    max-width:300px;
-    /* Match height of the frame so top/center alignment works */
-    align-self:stretch;
-  }
-  /* Top slot: close button floats to top-right of the column */
-  #lb-meta-top {
-    display:flex;
-    justify-content:flex-end;  /* push close to the right */
-    align-items:flex-start;
-    padding-bottom:.5rem;
-    flex-shrink:0;
-  }
-  /* Content slot: fills remaining space, centers the text vertically */
-  #lb-meta-content {
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;   /* vertically centered in remaining height */
-    align-items:flex-start;
-    gap:1rem;
-  }
-  @media (orientation:portrait),(max-aspect-ratio:3/4) {
-    #lb-meta-panel  { align-self:center; max-width:100%; }
-    #lb-meta-top    { justify-content:center; }
-    #lb-meta-content{ align-items:center; }
-  }
-
-  .lb-avatar {
-    width:56px; height:56px; border-radius:50%;
-    border:1px solid rgba(160,190,255,.3);
-    background:radial-gradient(circle at 38% 32%,rgba(80,100,220,.4),rgba(10,8,40,.95));
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:0 0 30px rgba(100,140,255,.25),0 0 60px rgba(100,140,255,.1);
-    font-size:1.3rem; color:rgba(180,200,255,.6);
-    animation:avatarFloat 4s ease-in-out infinite;
-  }
-  @keyframes avatarFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
-
-  /* Text inside frame (placeholder) */
-  .lb-frame-uname { font-family:'Cormorant Garamond',serif; font-style:italic; font-size:1rem; color:rgba(220,232,255,.9); letter-spacing:.05em; }
-  .lb-frame-tag   { font-weight:200; font-size:.55rem; letter-spacing:.28em; text-transform:uppercase; color:rgba(180,200,255,.6); }
-  .lb-frame-line  { width:28px; height:1px; background:rgba(180,200,255,.3); }
-
-  /* Text in meta panel — all brightened for readability */
-  .lb-panel-uname {
-    font-family:'Cormorant Garamond',serif; font-style:italic;
-    font-size:clamp(1.3rem,2.2vw,1.9rem);
-    color:rgba(230,238,255,1);           /* full white-ish, was .85 */
-    letter-spacing:.04em; line-height:1.1;
-  }
-  /* .lb-panel-tag removed — hashtag lives permanently in the HUD top-left */
-  .lb-panel-dream {
-    font-family:'Cormorant Garamond',serif; font-style:italic;
-    font-size:clamp(.95rem,1.2vw,1.1rem);
-    color:rgba(210,222,255,.85);         /* was .5 */
-    line-height:1.75;
-  }
-
-  .lb-panel-line  { width:40px; height:1px; background:rgba(180,200,255,.25); }
-
-  /* Instagram link — text version in meta panel */
-  .lb-ig-text-link {
-    font-family:'Raleway',sans-serif; font-weight:300; font-size:.65rem;
-    letter-spacing:.22em; text-transform:uppercase;
-    color:rgba(180,205,255,.7);
-    text-decoration:none;
-    border-bottom:1px solid rgba(160,190,255,.3);
-    padding-bottom:2px;
-    transition:color .2s, border-color .2s;
-  }
-  .lb-ig-text-link:hover { color:rgba(220,235,255,1); border-color:rgba(200,220,255,.7); }
-
-  /* Close button — sits in #lb-meta-top, right-aligned to the column top */
-  #lb-close {
-    display:none;
-    align-items:center; justify-content:center;
-    gap:.4rem;
-    background:none;
-    border:1px solid rgba(180,200,255,.22);
-    color:rgba(200,218,255,.7);
-    font-family:'Raleway',sans-serif; font-weight:200; font-size:.58rem;
-    letter-spacing:.25em; text-transform:uppercase;
-    padding:.4rem .85rem;
-    cursor:none;
-    border-radius:3px;
-    transition:border-color .2s, color .2s, background .2s;
-    white-space:nowrap;
-  }
-  #letterbox.open #lb-close { display:flex; }
-  #lb-close:hover {
-    border-color:rgba(210,228,255,.55);
-    color:rgba(235,243,255,1);
-    background:rgba(140,170,255,.06);
-  }
-
-  #veil { position:fixed; inset:0; background:#020408; z-index:1000; transition:opacity 2.5s; pointer-events:none; }
-  #veil.gone { opacity:0; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shooting Stars</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="veil"></div>
-<div id="cursor"></div>
-<div id="canvas-container"></div>
 
-<div id="hud">
-  <div id="title"><h1>Shooting Stars</h1><p>#StanDareToPost &nbsp;·&nbsp; today's dreamers</p></div>
-  <div id="counter">
-    <div class="num"><span id="found">0</span></div>
-    <div class="label">of <span id="total">0</span> discovered</div>
+  <!-- Entry fade veil -->
+  <div id="veil"></div>
+
+  <!-- Custom cursor -->
+  <div id="cursor"></div>
+
+  <!-- Three.js canvas mount point -->
+  <div id="canvas-container"></div>
+
+  <!-- ── HUD ─────────────────────────────────────────────────────── -->
+  <div id="hud">
+    <div id="title">
+      <h1>Shooting Stars</h1>
+      <p>#StanDareToPost &nbsp;·&nbsp; today's dreamers</p>
+    </div>
+    <div id="counter">
+      <div class="num"><span id="found">0</span></div>
+      <div class="label">of <span id="total">0</span> discovered</div>
+    </div>
+    <div id="hint">
+      scroll to fly deeper &nbsp;·&nbsp; drag or arrow keys to explore &nbsp;·&nbsp; click a star
+    </div>
   </div>
-  <div id="hint">scroll to fly deeper &nbsp;·&nbsp; drag or arrow keys to explore &nbsp;·&nbsp; click a star</div>
-</div>
 
-<div id="star-tooltip">
-  <div class="tt-name" id="tt-name">@username</div>
-  <div class="tt-sub">click to reveal</div>
-</div>
+  <!-- Star hover tooltip -->
+  <div id="star-tooltip">
+    <div class="tt-name" id="tt-name">@username</div>
+    <div class="tt-sub">click to reveal</div>
+  </div>
 
-<!-- Letterbox:
-     Landscape → [bar] [ door-frame | meta+close ] [bar]
-     Portrait  → [bar] [ door-frame ] [ meta+close ] [bar]              -->
-<div id="letterbox">
-  <div class="lb-bar"></div>
-  <div id="lb-stage">
+  <!-- ── Letterbox overlay ────────────────────────────────────────
+       Landscape → [slim bar] [ 9:16 door-frame | meta panel ] [slim bar]
+       Portrait  → [bar] [ door-frame ] [ meta panel ] [bar]            -->
+  <div id="letterbox">
+    <div class="lb-bar"></div>
 
-    <!-- Outer "door" border shell -->
-    <div id="lb-frame-outer">
-      <!-- Inner frame clips media -->
-      <div id="lb-frame">
-        <!-- Placeholder avatar shown before real media loads -->
-        <div class="lb-avatar" id="lb-avatar">✦</div>
-        <div class="lb-frame-uname" id="lb-frame-uname">@username</div>
-        <div class="lb-frame-tag" id="lb-frame-tag">#firstpost</div>
-        <div class="lb-frame-line"></div>
-        <!-- Clickable overlay — entire image/video is a link to Instagram -->
-        <a id="lb-frame-link" href="#" target="_blank" rel="noopener" aria-label="View on Instagram"></a>
+    <div id="lb-stage">
+
+      <!-- Outer "door" border shell -->
+      <div id="lb-frame-outer">
+        <!-- Inner frame — clips media to rounded rect -->
+        <div id="lb-frame">
+          <!-- Placeholder shown while media loads -->
+          <div class="lb-avatar" id="lb-avatar">✦</div>
+          <div class="lb-frame-uname" id="lb-frame-uname">@username</div>
+          <div class="lb-frame-tag">#StanDareToPost</div>
+          <div class="lb-frame-line"></div>
+          <!-- Injected media (.lb-media) goes here -->
+          <!-- Clickable overlay — whole image/video links to Instagram -->
+          <a id="lb-frame-link" href="#" target="_blank" rel="noopener" aria-label="View on Instagram"></a>
+        </div>
+      </div>
+
+      <!-- Meta panel: close pinned top-right, post info vertically centered -->
+      <div id="lb-meta-panel">
+
+        <div id="lb-meta-top">
+          <button id="lb-close">esc &nbsp; ✕</button>
+        </div>
+
+        <div id="lb-meta-content">
+          <div class="lb-panel-uname" id="lb-panel-uname">@username</div>
+          <div class="lb-panel-line"></div>
+          <div class="lb-panel-dream" id="lb-panel-dream">their first step into the light</div>
+          <a class="lb-ig-text-link" id="lb-post-link" href="#" target="_blank" rel="noopener" style="display:none;">
+            view on instagram ↗
+          </a>
+        </div>
+
       </div>
     </div>
 
-    <!-- Meta panel: full-height column, close pinned top-right, content centered -->
-    <div id="lb-meta-panel">
-      <!-- Top row: close button pinned to top-right of this column -->
-      <div id="lb-meta-top">
-        <button id="lb-close" onclick="closeLetterbox()">esc &nbsp; ✕</button>
-      </div>
-      <!-- Center: the actual post info, vertically centered in remaining space -->
-      <div id="lb-meta-content">
-        <div class="lb-panel-uname"     id="lb-panel-uname">@username</div>
-        <div class="lb-panel-line"></div>
-        <div class="lb-panel-dream"     id="lb-panel-dream">their first step into the light</div>
-        <a class="lb-ig-text-link" id="lb-post-link" href="#" target="_blank" rel="noopener" style="display:none;">
-          view on instagram ↗
-        </a>
-      </div>
-    </div>
-
+    <div class="lb-bar"></div>
   </div>
-  <div class="lb-bar"></div>
-</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-// ── LocalStorage helpers ─────────────────────────────────────────
-// Keys are date-scoped (YYYY-MM-DD) so progress resets each day automatically.
-const LS_PREFIX = 'firstlight';
+  <!-- ── Scripts ──────────────────────────────────────────────────
+       Three.js loaded first (global), then ES modules.
+       type="module" defers automatically and scopes imports.      -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script type="module" src="scripts/main.js"></script>
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
+  <!-- Wire close button after modules load — keeps HTML declarative -->
+  <script type="module">
+    import { closeLetterbox } from './scripts/letterbox.js';
+    document.getElementById('lb-close').addEventListener('click', closeLetterbox);
+  </script>
 
-function loadDiscovered() {
-  try {
-    const raw = localStorage.getItem(`${LS_PREFIX}:${todayKey()}`);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch { return new Set(); }
-}
-
-function saveDiscovered(set) {
-  try {
-    localStorage.setItem(`${LS_PREFIX}:${todayKey()}`, JSON.stringify([...set]));
-  } catch {}
-}
-
-// Clean up yesterday's keys so storage doesn't grow forever
-function pruneOldKeys() {
-  try {
-    const today = todayKey();
-    Object.keys(localStorage)
-      .filter(k => k.startsWith(LS_PREFIX + ':') && !k.endsWith(today))
-      .forEach(k => localStorage.removeItem(k));
-  } catch {}
-}
-
-pruneOldKeys();
-const discoveredToday = loadDiscovered(); // Set of post IDs clicked today
-
-// ── Fetch posts.json from GitHub Pages ───────────────────────────
-// posts.json is committed daily by the GitHub Actions cron.
-// Falls back to an empty set so the page still loads if the file is missing.
-async function loadPosts() {
-  try {
-    const res = await fetch('./posts.json', { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    // Guard: if the JSON date doesn't match today the cron hasn't run yet —
-    // still show whatever posts are there rather than showing nothing.
-    if (!data.posts || !Array.isArray(data.posts)) return [];
-
-    // Map Apify fields → the shape the scene expects
-    return data.posts.map((p, i) => ({
-      id:        p.id ?? String(i),
-      username:  p.username,
-      fullName:  p.fullName  ?? '',
-        videoUrl:  p.videoUrl  ?? null,
-      thumbUrl:  p.thumbUrl  ?? null,
-      caption:   p.caption   ?? '',
-      postUrl:   p.postUrl   ?? '#',
-      postedAt:  p.postedAt  ?? null,
-      type:      p.type      ?? 'Image',
-    }));
-  } catch (err) {
-    console.warn('Could not load posts.json, using empty set.', err);
-    return [];
-  }
-}
-
-// Populated after fetch resolves — scene is built inside init()
-let STARS_DATA = [];
-
-// ── Renderer ──────────────────────────────────────────────────────
-const container = document.getElementById('canvas-container');
-const renderer  = new THREE.WebGLRenderer({ antialias:true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0x020408, 1);
-container.appendChild(renderer.domElement);
-
-const scene  = new THREE.Scene();
-scene.fog    = new THREE.FogExp2(0x020408, 0.0015);
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 3000);
-camera.position.set(0, 0, 130);
-
-// ── Ambient star field ────────────────────────────────────────────
-(function(){
-  const N=5000, pos=new Float32Array(N*3), sz=new Float32Array(N), al=new Float32Array(N);
-  for(let i=0;i<N;i++){
-    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=180+Math.random()*1400;
-    pos[i*3]=r*Math.sin(ph)*Math.cos(th); pos[i*3+1]=r*Math.sin(ph)*Math.sin(th); pos[i*3+2]=r*Math.cos(ph);
-    sz[i]=1.2+Math.random()*3.2; al[i]=0.2+Math.random()*0.7;
-  }
-  const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  geo.setAttribute('aSize',   new THREE.BufferAttribute(sz,1));
-  geo.setAttribute('aAlpha',  new THREE.BufferAttribute(al,1));
-  const mat=new THREE.ShaderMaterial({
-    uniforms:{uTime:{value:0}},
-    vertexShader:`
-      attribute float aSize; attribute float aAlpha; varying float vAlpha; uniform float uTime;
-      void main(){
-        vAlpha=aAlpha; vec4 mv=modelViewMatrix*vec4(position,1.0);
-        float tw=0.82+0.18*sin(uTime*1.6+position.x*0.4+position.z*0.3);
-        gl_PointSize=aSize*tw*(280.0/-mv.z); gl_Position=projectionMatrix*mv;
-      }`,
-    fragmentShader:`
-      varying float vAlpha;
-      void main(){
-        vec2 uv=gl_PointCoord-0.5; float d=length(uv); if(d>0.5)discard;
-        float a=smoothstep(0.5,0.0,d)*vAlpha;
-        vec3 col=mix(vec3(0.78,0.88,1.0),vec3(1.0,0.94,0.85),fract(vAlpha*7.3));
-        gl_FragColor=vec4(col,a);
-      }`,
-    transparent:true, depthWrite:false,
-  });
-  scene.add(new THREE.Points(geo,mat));
-  scene.userData.ambientMat=mat;
-})();
-
-// Nebula
-[{col:0x110840,x:-90,y:40,z:-280,s:300,r:.4},{col:0x081530,x:110,y:-60,z:-480,s:380,r:1.1},{col:0x180530,x:0,y:90,z:-680,s:450,r:2.0}]
-.forEach(d=>{
-  const m=new THREE.Mesh(new THREE.PlaneGeometry(d.s,d.s),new THREE.MeshBasicMaterial({color:d.col,transparent:true,opacity:.14,depthWrite:false,blending:THREE.AdditiveBlending}));
-  m.position.set(d.x,d.y,d.z); m.rotation.z=d.r; scene.add(m);
-});
-
-// ── Shooting star shaders ─────────────────────────────────────────
-const HEAD_VERT=`
-  uniform float uSize; uniform float uViewed;
-  void main(){
-    vec4 mv=modelViewMatrix*vec4(position,1.0);
-    float s=uViewed>0.5?uSize*1.6:uSize;
-    gl_PointSize=s*(300.0/-mv.z); gl_Position=projectionMatrix*mv;
-  }`;
-
-const HEAD_FRAG=`
-  uniform float uTime,uPulse,uViewed;
-  void main(){
-    vec2 uv=gl_PointCoord-0.5; float d=length(uv); if(d>0.5)discard;
-    if(uViewed>0.5){
-      float core=exp(-d*16.0)*2.5, glow=exp(-d*4.5)*(0.6+0.3*sin(uTime*1.6)), halo=exp(-abs(d-0.28)*22.0)*0.5;
-      vec3 col=core*vec3(1.0,.6,.22)+glow*vec3(.85,.32,.08)+halo*vec3(.7,.25,.05);
-      gl_FragColor=vec4(col,clamp(core+glow+halo,0.,1.)); return;
-    }
-    float nuc=exp(-d*40.)*3.5, core=exp(-d*18.)*2.0;
-    float h1=exp(-abs(d-(.16+uPulse*.07))*45.)*(.8+uPulse*.5);
-    float h2=exp(-abs(d-(.30+uPulse*.04))*30.)*(.35+uPulse*.25);
-    float cor=exp(-d*5.5)*.5;
-    float alpha=clamp(nuc+core+h1+h2+cor,0.,1.);
-    vec3 col=nuc*vec3(1,1,1)+core*vec3(.9,.96,1)+h1*vec3(.6,.78,1)+h2*vec3(.4,.55,.95)+cor*vec3(.3,.45,.85);
-    gl_FragColor=vec4(col,alpha);
-  }`;
-
-const STREAK_VERT=`
-  attribute float aTaper,aOffset; varying float vTaper,vOffset;
-  void main(){ vTaper=aTaper; vOffset=aOffset; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
-
-const STREAK_FRAG=`
-  uniform float uTime,uViewed; varying float vTaper,vOffset;
-  void main(){
-    if(uViewed>0.5){discard;return;}
-    float b=vOffset*vOffset, sh=.75+.25*sin(uTime*6.-vOffset*14.);
-    float edge=smoothstep(0.,.35,vTaper)*smoothstep(1.,.65,vTaper);
-    float alpha=b*sh*edge*.92;
-    vec3 col=mix(vec3(.25,.35,.8),vec3(.75,.88,1.),vOffset);
-    gl_FragColor=vec4(col,clamp(alpha,0.,1.));
-  }`;
-
-// ── Streak geometry ───────────────────────────────────────────────
-function buildStreak(len,hw){
-  const SEG=40, verts=[],tapers=[],offsets=[],idx=[];
-  for(let s=0;s<=SEG;s++){
-    const t=s/SEG, x=-t*len, w=hw*(1-t)*(1-t), off=1-t;
-    verts.push(x,w,0);  tapers.push(0); offsets.push(off);
-    verts.push(x,0,0);  tapers.push(1); offsets.push(off);
-    verts.push(x,-w,0); tapers.push(0); offsets.push(off);
-  }
-  for(let s=0;s<SEG;s++){
-    const b=s*3;
-    idx.push(b,b+3,b+1, b+3,b+4,b+1, b+1,b+4,b+2, b+4,b+5,b+2);
-  }
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(verts),3));
-  g.setAttribute('aTaper',  new THREE.BufferAttribute(new Float32Array(tapers),1));
-  g.setAttribute('aOffset', new THREE.BufferAttribute(new Float32Array(offsets),1));
-  g.setIndex(idx); return g;
-}
-
-// ── Place stars ───────────────────────────────────────────────────
-function gridPos(n){
-  const SP=350, cols=Math.ceil(Math.sqrt(n*1.5)), rows=Math.ceil(n/cols);
-  const cw=SP*2/cols, ch=SP*2/rows;
-  return shuffle([...Array(cols*rows).keys()]).slice(0,n).map(idx=>{
-    const col=idx%cols, row=Math.floor(idx/cols), m=.18;
-    return { x:-SP+(col+m+Math.random()*(1-m*2))*cw, y:-SP+(row+m+Math.random()*(1-m*2))*ch, z:-50+Math.random()*160 };
-  });
-}
-
-const starObjects=[];
-
-function buildScene() {
-const starPositions=gridPos(STARS_DATA.length);
-STARS_DATA.forEach((data,i)=>{
-  const p=starPositions[i], angle=(-28+(Math.random()*24-12))*Math.PI/180;
-  const phase=Math.random()*Math.PI*2, driftR=3.5+Math.random()*4, driftSpd=.012+Math.random()*.010;
-
-  const group=new THREE.Group();
-  group.position.set(p.x,p.y,p.z); group.rotation.z=angle;
-
-  const headMat=new THREE.ShaderMaterial({
-    uniforms:{uTime:{value:0},uPulse:{value:0},uViewed:{value:0},uSize:{value:48}},
-    vertexShader:HEAD_VERT, fragmentShader:HEAD_FRAG,
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
-  });
-  const hg=new THREE.BufferGeometry();
-  hg.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,0,0]),3));
-  group.add(new THREE.Points(hg,headMat));
-
-  const streakMat=new THREE.ShaderMaterial({
-    uniforms:{uTime:{value:0},uViewed:{value:0}},
-    vertexShader:STREAK_VERT, fragmentShader:STREAK_FRAG,
-    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide,
-  });
-  group.add(new THREE.Mesh(buildStreak(22+Math.random()*16,.55),streakMat));
-  scene.add(group);
-
-  const hitSphere=new THREE.Mesh(new THREE.SphereGeometry(3.5,6,6),new THREE.MeshBasicMaterial({visible:false}));
-  hitSphere.position.set(p.x,p.y,p.z); scene.add(hitSphere);
-
-  starObjects.push({ group,headMat,streakMat,hitSphere,data,
-    ox:p.x,oy:p.y,phase,driftR,driftSpd,viewed:false,
-    blastDir:new THREE.Vector2(Math.random()-.5,Math.random()-.5).normalize(),
-  });
-});
-document.getElementById('total').textContent=STARS_DATA.length;
-} // end buildScene
-
-// ── Raycasting ────────────────────────────────────────────────────
-const raycaster=new THREE.Raycaster(), mouseNDC=new THREE.Vector2(-9,-9);
-let hoveredStar=null, foundCount=0;
-const cursorEl=document.getElementById('cursor'), tooltip=document.getElementById('star-tooltip'), ttName=document.getElementById('tt-name');
-
-function castRay(){
-  raycaster.setFromCamera(mouseNDC,camera);
-  const hits=raycaster.intersectObjects(starObjects.map(s=>s.hitSphere));
-  if(hits.length){
-    const obj=starObjects.find(s=>s.hitSphere===hits[0].object);
-    if(obj&&obj!==hoveredStar){ hoveredStar=obj; ttName.textContent='@'+obj.data.username; cursorEl.classList.add('near-star'); tooltip.classList.add('visible'); }
-  } else if(hoveredStar){ hoveredStar=null; cursorEl.classList.remove('near-star'); tooltip.classList.remove('visible'); }
-}
-
-// ── Camera ────────────────────────────────────────────────────────
-const camT={x:0,y:0,z:130}, PAN=340, ZMN=18, ZMX=220, keys={};
-window.addEventListener('keydown',e=>{ keys[e.key]=true; if(e.key==='Escape')closeLetterbox(); });
-window.addEventListener('keyup',  e=>{ keys[e.key]=false; });
-window.addEventListener('wheel',e=>{
-  e.preventDefault();
-  camT.z=Math.max(ZMN,Math.min(ZMX,camT.z+e.deltaY*.13));
-  camT.x=Math.max(-PAN,Math.min(PAN,camT.x+e.deltaX*.06));
-},{passive:false});
-
-let drag=null;
-window.addEventListener('mousedown',e=>{ if(e.target.closest('#letterbox'))return; drag={sx:e.clientX,sy:e.clientY,cx:camT.x,cy:camT.y}; });
-window.addEventListener('mouseup',  ()=>{ drag=null; });
-window.addEventListener('mousemove',e=>{
-  cursorEl.style.left=e.clientX+'px'; cursorEl.style.top=e.clientY+'px';
-  tooltip.style.left =e.clientX+'px'; tooltip.style.top =e.clientY+'px';
-  mouseNDC.x=(e.clientX/window.innerWidth)*2-1; mouseNDC.y=-(e.clientY/window.innerHeight)*2+1;
-  if(!drag)return;
-  camT.x=Math.max(-PAN,Math.min(PAN,drag.cx-(e.clientX-drag.sx)*.14));
-  camT.y=Math.max(-PAN,Math.min(PAN,drag.cy+(e.clientY-drag.sy)*.14));
-});
-window.addEventListener('click',()=>{ if(hoveredStar)openLetterbox(hoveredStar); });
-
-let t0=null;
-window.addEventListener('touchstart',e=>{ t0={x:e.touches[0].clientX,y:e.touches[0].clientY,cx:camT.x,cy:camT.y}; },{passive:true});
-window.addEventListener('touchmove', e=>{
-  if(!t0)return;
-  camT.x=Math.max(-PAN,Math.min(PAN,t0.cx-(e.touches[0].clientX-t0.x)*.14));
-  camT.y=Math.max(-PAN,Math.min(PAN,t0.cy+(e.touches[0].clientY-t0.y)*.14));
-  e.preventDefault();
-},{passive:false});
-
-function processKeys(){
-  const sp=keys['Shift']?2.2:.9;
-  if(keys['ArrowLeft'] ||keys['a'])camT.x=Math.max(-PAN,camT.x-sp);
-  if(keys['ArrowRight']||keys['d'])camT.x=Math.min(PAN,camT.x+sp);
-  if(keys['ArrowUp']   ||keys['w'])camT.y=Math.min(PAN,camT.y+sp);
-  if(keys['ArrowDown'] ||keys['s'])camT.y=Math.max(-PAN,camT.y-sp);
-}
-
-// ── Letterbox ─────────────────────────────────────────────────────
-function openLetterbox(s){
-  // Only mark as viewed + increment score the first time
-  if(!s.viewed){
-    s.viewed=true;
-    s.headMat.uniforms.uViewed.value=s.streakMat.uniforms.uViewed.value=1.0;
-    foundCount++;
-    discoveredToday.add(s.data.id);
-    saveDiscovered(discoveredToday);
-    document.getElementById('found').textContent=foundCount;
-  }
-  // Hit sphere stays visible always — so dimmed stars remain clickable
-
-  // ── Text fields ──
-  const uname = '@'+s.data.username;
-  document.getElementById('lb-frame-uname').textContent = uname;
-  document.getElementById('lb-panel-uname').textContent = uname;
-
-  const caption = s.data.caption || 'their first step into the light';
-  document.getElementById('lb-panel-dream').textContent =
-    caption.length > 140 ? caption.slice(0,137)+'...' : caption;
-
-  // ── Wire up Instagram links ──
-  // 1. Entire image/video is clickable (frame overlay link)
-  const frameLink = document.getElementById('lb-frame-link');
-  frameLink.href = s.data.postUrl;
-
-  // 2. Text link in meta panel
-  const textLink = document.getElementById('lb-post-link');
-  textLink.href = s.data.postUrl;
-  textLink.style.display = 'inline';
-
-  // ── Inject media — remove previous first ──
-  const frame = document.getElementById('lb-frame');
-  frame.querySelectorAll('.lb-media').forEach(el=>el.remove());
-
-  // Show placeholder avatar while media loads
-  const avatar = document.getElementById('lb-avatar');
-  if (avatar) avatar.style.display = 'flex';
-
-  if (s.data.videoUrl) {
-    const vid = document.createElement('video');
-    vid.className   = 'lb-media';
-    vid.src         = s.data.videoUrl;
-    vid.autoplay    = true;
-    vid.loop        = true;
-    vid.muted       = false;
-    vid.playsInline = true;
-    vid.controls    = true;
-    vid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top center;z-index:1;border-radius:15px;';
-    vid.oncanplay = () => { if(avatar) avatar.style.display='none'; };
-    frame.appendChild(vid);
-    vid.play().catch(()=>{ vid.muted=true; vid.play(); });
-  } else if (s.data.thumbUrl) {
-    const img = document.createElement('img');
-    img.className = 'lb-media';
-    img.src       = s.data.thumbUrl;
-    img.alt       = uname;
-    img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#05050f;z-index:1;border-radius:15px;';
-    img.onload = () => { if(avatar) avatar.style.display='none'; };
-    frame.appendChild(img);
-  }
-
-  document.getElementById('letterbox').classList.add('open');
-}
-function closeLetterbox(){
-  document.querySelectorAll('#lb-frame video.lb-media').forEach(v=>{ v.pause(); });
-  document.getElementById('letterbox').classList.remove('open');
-  // Reset frame link so it doesn't linger
-  document.getElementById('lb-frame-link').href = '#';
-  hoveredStar=null; cursorEl.classList.remove('near-star'); tooltip.classList.remove('visible');
-}
-
-// ── Main loop ─────────────────────────────────────────────────────
-const clock=new THREE.Clock(); let e0=null;
-function animate(){
-  requestAnimationFrame(animate);
-  const t=clock.getElapsedTime(); if(e0===null)e0=t;
-  const calm=easeOutExpo(Math.min((t-e0)/5.5,1)), blast=1-calm;
-  if(scene.userData.ambientMat)scene.userData.ambientMat.uniforms.uTime.value=t;
-  starObjects.forEach(s=>{
-    s.headMat.uniforms.uTime.value=s.streakMat.uniforms.uTime.value=t;
-    if(s.viewed)return;
-    s.headMat.uniforms.uPulse.value=.5+.5*Math.sin(t*2.4+s.phase);
-    const nx=s.ox+Math.sin(t*s.driftSpd+s.phase)*s.driftR*calm+s.blastDir.x*blast*40;
-    const ny=s.oy+Math.cos(t*s.driftSpd*.65+s.phase*1.4)*s.driftR*.45*calm+s.blastDir.y*blast*25;
-    s.group.position.x=s.hitSphere.position.x=nx;
-    s.group.position.y=s.hitSphere.position.y=ny;
-  });
-  processKeys();
-  camera.position.x+=(camT.x-camera.position.x)*.07;
-  camera.position.y+=(camT.y-camera.position.y)*.07;
-  camera.position.z+=(camT.z-camera.position.z)*.07;
-  camera.lookAt(camT.x*.1,camT.y*.1,0);
-  castRay(); renderer.render(scene,camera);
-}
-
-function easeOutExpo(x){return x>=1?1:1-Math.pow(2,-10*x);}
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
-
-window.addEventListener('resize',()=>{
-  camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth,window.innerHeight);
-});
-
-// ── Boot: fetch posts then build scene ───────────────────────────
-async function init() {
-  STARS_DATA = await loadPosts();
-
-  // If no posts today yet, show a gentle message instead of empty space
-  if (STARS_DATA.length === 0) {
-    document.getElementById('total').textContent = '0';
-    document.getElementById('found').textContent = '0';
-    const hint = document.getElementById('hint');
-    if (hint) hint.textContent = 'no new stars yet today — check back soon';
-    setTimeout(()=>document.getElementById('veil').classList.add('gone'), 200);
-    setTimeout(()=>document.getElementById('veil').remove(), 3000);
-    animate(); // still render the ambient star field
-    return;
-  }
-
-  // Build the 3D scene with real posts
-  buildScene();
-
-  // Restore already-discovered stars from localStorage
-  starObjects.forEach(s => {
-    if (discoveredToday.has(s.data.id)) {
-      s.viewed = true;
-      s.headMat.uniforms.uViewed.value   = 1.0;
-      s.streakMat.uniforms.uViewed.value = 1.0;
-      // hit sphere stays visible so viewed stars remain clickable
-    }
-  });
-
-  // Sync counter
-  foundCount = discoveredToday.size;
-  document.getElementById('found').textContent = foundCount;
-
-  setTimeout(()=>document.getElementById('veil').classList.add('gone'), 200);
-  setTimeout(()=>document.getElementById('veil').remove(), 3000);
-  setTimeout(()=>{
-    const h=document.getElementById('hint');
-    if (h) { h.classList.add('fade'); setTimeout(()=>h.remove(),1600); }
-  }, 9000);
-
-  animate();
-}
-
-init();
-</script>
 </body>
 </html>

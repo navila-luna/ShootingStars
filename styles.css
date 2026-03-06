@@ -1,0 +1,476 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300;1,400&family=Raleway:wght@200;300&display=swap');
+
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #020408;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  font-family: 'Raleway', sans-serif;
+  cursor: none;
+}
+
+#canvas-container {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+}
+
+/* ── Custom cursor ────────────────────────────────────────────── */
+#cursor {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(200, 220, 255, .9);
+  box-shadow: 0 0 12px 3px rgba(140, 180, 255, .5);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  transition: width .25s, height .25s, background .25s, box-shadow .25s;
+}
+
+#cursor.near-star {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1.5px solid rgba(180, 210, 255, .6);
+  box-shadow:
+    0 0 20px 4px rgba(140, 180, 255, .3),
+    inset 0 0 10px rgba(140, 180, 255, .1);
+}
+
+/* ── HUD ──────────────────────────────────────────────────────── */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 200;
+}
+
+#title {
+  position: absolute;
+  top: 2.2rem;
+  left: 2.5rem;
+}
+
+#title h1 {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 300;
+  font-size: clamp(2.2rem, 3.2vw, 3.4rem);
+  color: rgba(230, 238, 255, 1);
+  letter-spacing: .08em;
+  line-height: 1;
+  text-shadow:
+    0 0 18px rgba(160, 190, 255, .7),
+    0 0 45px rgba(120, 160, 255, .35),
+    0 0 90px rgba(100, 140, 255, .15);
+}
+
+#title p {
+  margin-top: .5rem;
+  font-weight: 200;
+  font-size: .78rem;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: rgba(180, 205, 255, .75);
+}
+
+#counter {
+  position: absolute;
+  top: 2.2rem;
+  right: 2.5rem;
+  text-align: right;
+}
+
+#counter .num {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: clamp(2.2rem, 3.2vw, 3.4rem);
+  font-weight: 300;
+  color: rgba(230, 238, 255, 1);
+  line-height: 1;
+  text-shadow:
+    0 0 14px rgba(160, 190, 255, .6),
+    0 0 35px rgba(120, 160, 255, .3);
+}
+
+#counter .label {
+  font-weight: 200;
+  font-size: .75rem;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: rgba(180, 205, 255, .7);
+  margin-top: .3rem;
+}
+
+#hint {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-weight: 200;
+  font-size: .72rem;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: rgba(180, 205, 255, .65);
+  white-space: nowrap;
+  transition: opacity 1.5s;
+}
+
+#hint.fade {
+  opacity: 0;
+}
+
+/* ── Star tooltip ─────────────────────────────────────────────── */
+#star-tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 300;
+  opacity: 0;
+  transition: opacity .3s;
+  transform: translate(18px, -50%);
+}
+
+#star-tooltip.visible {
+  opacity: 1;
+}
+
+#star-tooltip .tt-name {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: .95rem;
+  color: rgba(210, 225, 255, .85);
+  letter-spacing: .04em;
+}
+
+#star-tooltip .tt-sub {
+  font-weight: 200;
+  font-size: .58rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: rgba(150, 175, 220, .45);
+  margin-top: .15rem;
+}
+
+/* ── Letterbox ────────────────────────────────────────────────── */
+/*
+  Layout:
+    Landscape → [slim bar] [ 9:16 door-frame | meta panel ] [slim bar]
+    Portrait  → [bar] [ door-frame ] [ meta panel ] [bar]
+*/
+#letterbox {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+  pointer-events: all;
+}
+
+#letterbox.open {
+  display: flex;
+}
+
+.lb-bar {
+  background: #000;
+  height: 0;
+  flex-shrink: 0;
+  transition: height .75s cubic-bezier(.77, 0, .175, 1);
+}
+
+#letterbox.open .lb-bar {
+  height: 3vh;
+}
+
+@media (orientation: portrait) {
+  #letterbox.open .lb-bar {
+    height: 8vh;
+  }
+}
+
+#lb-stage {
+  flex: 1;
+  background: #000;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: clamp(1.5rem, 3vw, 4rem);
+  padding: 1.5vh 4vw;
+  opacity: 0;
+  transition: opacity .6s ease .55s;
+}
+
+@media (orientation: portrait), (max-aspect-ratio: 3/4) {
+  #lb-stage {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+  }
+}
+
+#letterbox.open #lb-stage {
+  opacity: 1;
+}
+
+/* Outer "door" border shell */
+#lb-frame-outer {
+  flex-shrink: 0;
+  height: min(90vh, calc(100vh - 6vh - 1rem));
+  width: auto;
+  aspect-ratio: 9 / 16;
+  border-radius: 20px;
+  border: 3px solid rgba(180, 200, 255, .55);
+  outline: 6px solid rgba(100, 130, 255, .12);
+  box-shadow:
+    0 0 0 9px rgba(80, 110, 255, .07),
+    0 0 40px rgba(100, 150, 255, .18),
+    0 0 100px rgba(80, 120, 255, .10),
+    inset 0 0 30px rgba(80, 110, 255, .06);
+  padding: 5px;
+  background: rgba(8, 8, 24, .85);
+  position: relative;
+  animation: none;
+}
+
+#letterbox.open #lb-frame-outer {
+  animation: doorOpen .65s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes doorOpen {
+  from { transform: perspective(900px) rotateY(-18deg) scale(.94); opacity: 0; }
+  to   { transform: perspective(900px) rotateY(0deg)  scale(1);   opacity: 1; }
+}
+
+@media (orientation: portrait), (max-aspect-ratio: 3/4) {
+  #lb-frame-outer {
+    height: auto;
+    width: min(72vw, 300px);
+  }
+}
+
+/* Inner frame — clips media to rounded rect */
+#lb-frame {
+  width: 100%;
+  height: 100%;
+  border-radius: 15px;
+  background: #05050f;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+/* Scanline shimmer */
+#lb-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 15px;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 20, .04) 2px,
+    rgba(0, 0, 20, .04) 4px
+  );
+}
+
+/* Clickable overlay — entire image/video links to Instagram */
+#lb-frame-link {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  border-radius: 15px;
+  cursor: none;
+  transition: background .2s;
+}
+
+#lb-frame-link:hover {
+  background: rgba(150, 180, 255, .06);
+}
+
+/* ── Meta panel ───────────────────────────────────────────────── */
+/* Full-height column — close button pins to top-right, content centers */
+#lb-meta-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 300px;
+  align-self: stretch;
+}
+
+/* Top row: close button floats right */
+#lb-meta-top {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding-bottom: .5rem;
+  flex-shrink: 0;
+}
+
+/* Content: fills remaining space, vertically centered */
+#lb-meta-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+@media (orientation: portrait), (max-aspect-ratio: 3/4) {
+  #lb-meta-panel  { align-self: center; max-width: 100%; }
+  #lb-meta-top    { justify-content: center; }
+  #lb-meta-content { align-items: center; }
+}
+
+/* Placeholder avatar */
+.lb-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid rgba(160, 190, 255, .3);
+  background: radial-gradient(circle at 38% 32%, rgba(80, 100, 220, .4), rgba(10, 8, 40, .95));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 0 30px rgba(100, 140, 255, .25),
+    0 0 60px rgba(100, 140, 255, .1);
+  font-size: 1.3rem;
+  color: rgba(180, 200, 255, .6);
+  animation: avatarFloat 4s ease-in-out infinite;
+}
+
+@keyframes avatarFloat {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+
+/* Frame placeholder text */
+.lb-frame-uname {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: 1rem;
+  color: rgba(220, 232, 255, .9);
+  letter-spacing: .05em;
+}
+
+.lb-frame-tag {
+  font-weight: 200;
+  font-size: .55rem;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: rgba(180, 200, 255, .6);
+}
+
+.lb-frame-line {
+  width: 28px;
+  height: 1px;
+  background: rgba(180, 200, 255, .3);
+}
+
+/* Meta panel text */
+.lb-panel-uname {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: clamp(1.3rem, 2.2vw, 1.9rem);
+  color: rgba(230, 238, 255, 1);
+  letter-spacing: .04em;
+  line-height: 1.1;
+}
+
+.lb-panel-dream {
+  font-family: 'Cormorant Garamond', serif;
+  font-style: italic;
+  font-size: clamp(.95rem, 1.2vw, 1.1rem);
+  color: rgba(210, 222, 255, .85);
+  line-height: 1.75;
+}
+
+.lb-panel-line {
+  width: 40px;
+  height: 1px;
+  background: rgba(180, 200, 255, .25);
+}
+
+/* Instagram link */
+.lb-ig-text-link {
+  font-family: 'Raleway', sans-serif;
+  font-weight: 300;
+  font-size: .65rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: rgba(180, 205, 255, .7);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(160, 190, 255, .3);
+  padding-bottom: 2px;
+  transition: color .2s, border-color .2s;
+}
+
+.lb-ig-text-link:hover {
+  color: rgba(220, 235, 255, 1);
+  border-color: rgba(200, 220, 255, .7);
+}
+
+/* Close button */
+#lb-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  background: none;
+  border: 1px solid rgba(180, 200, 255, .22);
+  color: rgba(200, 218, 255, .7);
+  font-family: 'Raleway', sans-serif;
+  font-weight: 200;
+  font-size: .58rem;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  padding: .4rem .85rem;
+  cursor: none;
+  border-radius: 3px;
+  transition: border-color .2s, color .2s, background .2s;
+  white-space: nowrap;
+}
+
+#letterbox.open #lb-close {
+  display: flex;
+}
+
+#lb-close:hover {
+  border-color: rgba(210, 228, 255, .55);
+  color: rgba(235, 243, 255, 1);
+  background: rgba(140, 170, 255, .06);
+}
+
+/* ── Entry veil ───────────────────────────────────────────────── */
+#veil {
+  position: fixed;
+  inset: 0;
+  background: #020408;
+  z-index: 1000;
+  transition: opacity 2.5s;
+  pointer-events: none;
+}
+
+#veil.gone {
+  opacity: 0;
+}
