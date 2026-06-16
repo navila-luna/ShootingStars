@@ -20,3 +20,10 @@ An internet art project — animated shooting stars that once clicked, show peop
 | `scripts/fetch-posts.js` | Node script that calls Apify and writes posts.json |
 | `scripts/package.json` | Dependencies for the fetch script |
 | `.github/workflows/fetch-posts.yml` | GitHub Actions cron definition |
+
+<img width="1368" height="884" alt="Kapture 2026-06-15 at 20 21 20" src="https://github.com/user-attachments/assets/2d6430f5-4147-45df-99d2-a42f189ac19e" />
+
+<img width="1368" height="884" alt="Kapture 2026-06-15 at 20 23 35" src="https://github.com/user-attachments/assets/c756ab10-738e-49d6-a322-06f6ff5ef37b" />
+
+
+Or see a full demo here: https://www.instagram.com/reel/DVh159JAsIS/?utm_source=ig_web_copy_link&igsh=NTc4MTIwNjQ2YQ==
